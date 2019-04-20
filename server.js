@@ -1,107 +1,71 @@
 var express = require("express");
-var logger = require("morgan");
+var bodyParser = require("body-parser");
+var request = require("request");
 var mongoose = require("mongoose");
-
-var PORT = 3000;
-
-// Require all models
-var db = require("./models");
-
-// Initialize Express
+var Note = require("./models/Note.js");
+var Article = require("./models/Article.js");
+var Save = require("./models/Save.js");
+var logger = require("morgan");
+var cheerio = require("cheerio");
+var path = require("path");
 var app = express();
+var PORT = process.env.PORT || 4000;
 
-// Configure middleware
+// Parse application/x-www-form-urlencoded
+app.use(logger('dev'));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({
+    extended: true
+}));
+app.use(express.static("./public"));
 
-// Use morgan logger for logging requests
-app.use(logger("dev"));
-// Parse request body as JSON
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
-// Make public a static folder
-app.use(express.static("public"));
+// connect to database
+mongoose.Promise = Promise;
+var dbConnect = process.env.MONGODB_URI || "mongodb://localhost/foxsScrape";
+if(process.env.MONGODB_URI) {
+    mongoose.connect(process.env.MONGODB_URI)
+} else {
+    mongoose.connect(dbConnect);
+}
+// mongodb://foxsScrape:password12@ds119585.mlab.com:19585/heroku_hd8909ql;
+// Connect mongoose to our database
+/* mongoose.connect(dbConnect, function (error) {
+    // Log any errors connecting with mongoose
+    if (error) {
+        console.log(error);
+    }
+    // Or log a success message
+    else {
+        console.log("Mongoose connection is successful");
+    }
+}); */
+var db = mongoose.connection;
+db.on('error',function(err){
+    console.log('Mongoose Error',err);
+});
+db.once('open', function(){
+    console.log("Mongoose connection is successful");
+});
+var exphbs = require("express-handlebars");
 
-// Connect to the Mongo DB
-mongoose.connect("mongodb://localhost/populate", { useNewUrlParser: true });
+app.engine("handlebars", exphbs({
+    defaultLayout: "main"
+}));
 
-// When the server starts, create and save a new Library document to the db
-// The "unique" rule in the Library model's schema will prevent duplicate libraries from being added to the server
-db.Library.create({ name: "Campus Library" })
-  .then(function(dbLibrary) {
-    // If saved successfully, print the new Library document to the console
-    console.log(dbLibrary);
-  })
-  .catch(function(err) {
-    // If an error occurs, print it to the console
-    console.log(err.message);
-  });
+app.set("view engine", "handlebars");
 
-// Routes
-
-// POST route for saving a new Book to the db and associating it with a Library
-app.post("/submit", function(req, res) {
-  // Create a new Book in the database
-  db.Book.create(req.body)
-    .then(function(dbBook) {
-      // If a Book was created successfully, find one library (there's only one) and push the new Book's _id to the Library's `books` array
-      // { new: true } tells the query that we want it to return the updated Library -- it returns the original by default
-      // Since our mongoose query returns a promise, we can chain another `.then` which receives the result of the query
-      return db.Library.findOneAndUpdate({}, { $push: { books: dbBook._id } }, { new: true });
-    })
-    .then(function(dbLibrary) {
-      // If the Library was updated successfully, send it back to the client
-      res.json(dbLibrary);
-    })
-    .catch(function(err) {
-      // If an error occurs, send it back to the client
-      res.json(err);
-    });
+app.get("/", function (req, res) {
+    res.sendFile(path.join(__dirname, "views/index.html"));
 });
 
-// Route for getting all books from the db
-app.get("/books", function(req, res) {
-  // Using our Book model, "find" every book in our db
-  db.Book.find({})
-    .then(function(dbBook) {
-      // If any Books are found, send them to the client
-      res.json(dbBook);
-    })
-    .catch(function(err) {
-      // If an error occurs, send it back to the client
-      res.json(err);
-    });
+require("./routes/scrape")(app);
+require("./routes/html.js")(app);
+
+app.get("*", function (req, res) {
+    res.sendFile(path.join(__dirname, "views/index.html"));
 });
 
-// Route for getting all libraries from the db
-app.get("/library", function(req, res) {
-  // Using our Library model, "find" every library in our db
-  db.Library.find({})
-    .then(function(dbLibrary) {
-      // If any Libraries are found, send them to the client
-      res.json(dbLibrary);
-    })
-    .catch(function(err) {
-      // If an error occurs, send it back to the client
-      res.json(err);
-    });
-});
 
-// Route to see what library looks like WITH populating
-app.get("/populated", function(req, res) {
-  // Using our Library model, "find" every library in our db and populate them with any associated books
-  db.Library.find({})
-    // Specify that we want to populate the retrieved libraries with any associated books
-    .populate("books")
-    .then(function(dbLibrary) {
-      // If any Libraries are found, send them to the client with any associated Books
-      res.json(dbLibrary);
-    })
-    .catch(function(err) {
-      // If an error occurs, send it back to the client
-      res.json(err);
-    });
-});
-
-// Start the server
-app.listen(PORT, function() {
-  console.log("App running on port " + PORT + "!");
+app.listen(PORT, function () {
+    console.log("App listening on PORT " + PORT);
 });
