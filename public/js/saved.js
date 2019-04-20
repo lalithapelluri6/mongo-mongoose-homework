@@ -134,7 +134,7 @@ $(document).ready(function () {
                 hli.addClass("collection-header")
                 hli.text("Notes");
                 noteList.append(hli);
-            
+
                 for (let i = 0; i < data.length; i++) {
                     let ili = $("<li>");
                     ili.attr("id", data[i]._id);
